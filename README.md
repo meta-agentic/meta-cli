@@ -13,7 +13,7 @@ This tool implements the **engine adapter** contract used by [meta-os](https://g
 ## Install
 
 ```bash
-git clone https://github.com/mova77/meta-cli.git ~/code/mova77/meta-cli
+git clone https://github.com/meta-aos/meta-cli.git ~/code/mova77/meta-cli
 # or wherever you keep repos
 
 ln -sf ~/code/mova77/meta-cli/bin/meta ~/.local/bin/meta
