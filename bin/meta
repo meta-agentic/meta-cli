@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# meta — multi-engine CLI multiplexer (v0)
+# Fan-out headless runs to claude / gemini / grok / … ; collect artifacts.
+set -euo pipefail
+
+META_VERSION="0.1.0"
+META_HOME="${META_HOME:-}"
+
+# Resolve symlinks so `ln -s …/bin/meta ~/.local/bin/meta` still finds lib/
+_meta_src="${BASH_SOURCE[0]}"
+while [[ -L "$_meta_src" ]]; do
+  _meta_dir="$(cd "$(dirname "$_meta_src")" && pwd)"
+  _meta_link="$(readlink "$_meta_src")"
+  if [[ "$_meta_link" == /* ]]; then
+    _meta_src="$_meta_link"
+  else
+    _meta_src="${_meta_dir}/${_meta_link}"
+  fi
+done
+SCRIPT_DIR="$(cd "$(dirname "$_meta_src")" && pwd)"
+META_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+[[ -n "$META_HOME" ]] || META_HOME="$META_ROOT"
+
+# shellcheck source=/dev/null
+if [[ -f "${META_ROOT}/lib/meta.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "${META_ROOT}/lib/meta.sh"
+elif [[ -f "${SCRIPT_DIR}/lib/meta.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/lib/meta.sh"
+else
+  echo "meta: cannot find lib/meta.sh (looked under ${META_ROOT})" >&2
+  exit 127
+fi
+
+usage() {
+  cat <<'EOF'
+meta — multi-engine agent CLI multiplexer (v0)
+
+Usage:
+  meta which
+  meta run  -p <provider>   [options] -- <prompt...>
+  meta fan  -p <p1,p2,...>  [options] -- <prompt...>
+  meta collect --run-id <id> | --dir <path> [--to <dir>]
+  meta help | version
+
+Providers (v0): claude | gemini | grok | codex
+
+Options (run / fan):
+  -p, --providers <list>   Comma-separated provider ids (required)
+  -w, --workers <n>        Same-provider workers (fan only; default 1)
+  -C, --cwd <dir>          Working directory for children
+  -t, --timeout <sec>      Kill child after N seconds (0 = none)
+  -o, --out <dir>          Parent runs directory (default: $META_RUNS_DIR or ./.meta-runs)
+  --run-id <id>            Force run id (default: timestamp + random)
+  --dry-run                Print commands only; do not execute
+  --yolo                   Pass auto-approve flags when the adapter supports them
+  --                        End of options; remaining args are the prompt
+
+Collect:
+  --run-id <id>            Resolve under runs dir
+  --dir <path>             Explicit run directory
+  --to <dir>               Write summary markdown (default: stdout only;
+                           if --to is a dir named memory/raw or ends with it, write a capture)
+
+Env:
+  META_RUNS_DIR            Default parent for run artifacts
+  META_HOME                Optional override for repo root
+  META_CLAUDE / META_GEMINI / META_GROK / META_CODEX
+                           Override binary paths
+
+Examples:
+  meta which
+  meta run -p claude -- "Summarize this repo's README in 5 bullets"
+  meta fan -p claude,gemini,grok -- "Review the security of auth.ts"
+  meta fan -p claude --workers 3 -- "Independent research: …"
+  meta collect --run-id 20260722T120000-ab12 --to memory/raw
+EOF
+}
+
+cmd="${1:-}"
+case "$cmd" in
+  ""|-h|--help|help) usage; exit 0 ;;
+  version|-V|--version) echo "meta ${META_VERSION}"; exit 0 ;;
+  which) shift; meta_cmd_which "$@"; exit $? ;;
+  run) shift; meta_cmd_run "$@"; exit $? ;;
+  fan) shift; meta_cmd_fan "$@"; exit $? ;;
+  collect) shift; meta_cmd_collect "$@"; exit $? ;;
+  *)
+    echo "meta: unknown command: $cmd" >&2
+    echo "Try: meta help" >&2
+    exit 2
+    ;;
+esac

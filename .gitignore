@@ -1,0 +1,3 @@
+.meta-runs/
+*.log
+.DS_Store
