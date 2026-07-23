@@ -9,12 +9,12 @@
 | **Role** | Process multiplexer only — not a swarm brain |
 | **Lanes** | `cli` subprocess · `acp` warm session ([Agent Client Protocol](https://agentclientprotocol.com)) |
 
-This tool implements the **engine adapter** contract used by [meta-os](https://github.com/mova77/meta-os) (`systems/engine.md`). In-session multi-agent coordination (swarms, shared memory, hooks) stays with Ruflo / the host engine.
+This tool implements the **engine adapter** contract used by [meta-os](https://github.com/meta-agentic/meta-os) (`systems/engine.md`). In-session multi-agent coordination (swarms, shared memory, hooks) stays with Ruflo / the host engine.
 
 ## Install
 
 ```bash
-git clone https://github.com/meta-aos/meta-cli.git ~/code/mova77/meta-cli
+git clone https://github.com/meta-agentic/meta-cli.git ~/code/mova77/meta-cli
 # or wherever you keep repos
 
 ln -sf ~/code/mova77/meta-cli/bin/meta ~/.local/bin/meta
@@ -73,7 +73,7 @@ per-provider ACP availability. Explicit `--engine acp` **fails loudly** when una
 `auto` silently falls back to CLI.
 
 Implements the two-lane engine contract in
-[meta-os `systems/engine.md`](https://github.com/mova77/meta-os/blob/main/systems/engine.md).
+[meta-os `systems/engine.md`](https://github.com/meta-agentic/meta-os/blob/main/systems/engine.md).
 
 ## Run layout
 
