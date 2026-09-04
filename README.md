@@ -35,13 +35,15 @@ Optional env:
 
 ```bash
 meta which                          # provider CLI status + ACP-lane availability
-meta run  -p claude -- "prompt"     # one provider (auto lane)
+meta run  -p claude -- "prompt"     # one provider (auto lane); prints the answer, then the run dir
 meta run  --engine acp -p claude -- "prompt"  # warm persistent ACP session
 meta fan  -p claude,gemini,grok -- "prompt"   # cross-provider diversity
 meta fan  -p claude --workers 3 -- "prompt"   # same provider × N
 meta collect --run-id <id>          # markdown summary to stdout
 meta collect --run-id <id> --to memory/raw    # capture for meta-os vault
 ```
+
+`meta run` is headless: provider stdin is `/dev/null` (so Claude/Gemini/Codex cannot block waiting for EOF), stdout/stderr are captured under the run dir, and the provider's answer is printed when the child exits. Pass `-t 60` to kill a stuck child; pass `--yolo` only when the prompt needs unattended tool approval.
 
 ### Common options (`run` / `fan`)
 

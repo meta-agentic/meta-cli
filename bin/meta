@@ -53,7 +53,9 @@ Options (run / fan):
                            acp  = fail loudly if the ACP lane is unavailable
   -w, --workers <n>        Same-provider workers (fan only; default 1)
   -C, --cwd <dir>          Working directory for children
-  -t, --timeout <sec>      Kill child after N seconds (0 = none)
+  -t, --timeout <sec>      Kill child after N seconds (0 = none). Recommended;
+                           without it a stuck provider (permission prompt, MCP
+                           handshake) waits forever.
   -o, --out <dir>          Parent runs directory (default: $META_RUNS_DIR or ./.meta-runs)
   --run-id <id>            Force run id (default: timestamp + random)
   --dry-run                Print commands only; do not execute

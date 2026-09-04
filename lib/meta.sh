@@ -4,6 +4,9 @@
 meta_log() { printf 'meta: %s\n' "$*" >&2; }
 meta_die() { meta_log "error: $*"; exit 1; }
 
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/exec.sh"
+
 # ── providers ───────────────────────────────────────────────────────────────
 
 meta_providers_all() {
@@ -123,7 +126,10 @@ meta_build_cmd() {
   META_CMD_ARR=()
   case "$provider" in
     claude)
-      META_CMD_ARR=("$bin" -p "$prompt")
+      # Flags before -p so they apply in print mode. --permission-prompts none
+      # auto-denies gated tools instead of blocking on an invisible TTY prompt
+      # (stdout/stderr are files). --yolo still bypasses checks entirely.
+      META_CMD_ARR=("$bin" --output-format text --permission-prompts none -p "$prompt")
       if [[ "$yolo" == 1 ]]; then
         META_CMD_ARR+=(--dangerously-skip-permissions)
       fi
@@ -135,8 +141,8 @@ meta_build_cmd() {
       fi
       ;;
     grok)
-      # -p / --single: single-turn headless
-      META_CMD_ARR=("$bin" -p "$prompt")
+      # -p / --single: single-turn headless. --output-format plain keeps the TUI off.
+      META_CMD_ARR=("$bin" -p "$prompt" --output-format plain)
       if [[ "$yolo" == 1 ]]; then
         META_CMD_ARR+=(--always-approve)
       fi
@@ -324,7 +330,7 @@ meta_exec_one() {
   local lane="$META_RESOLVED_LANE" fallback="$META_LANE_FALLBACK"
 
   # Build the command for the chosen lane. The ACP lane runs the shipped Node client and
-  # takes cwd itself (so we clear the local cwd to skip the cd-subshell wrapper below).
+  # takes cwd itself (so we clear exec_cwd and skip the spawn-side cd).
   local exec_cwd="$cwd"
   if [[ "$lane" == "acp" ]]; then
     local acp_cmd script
@@ -366,66 +372,12 @@ meta_exec_one() {
   fi
 
   local orig_cwd="$cwd"   # for meta.json; acp records its cwd here even though it self-cds
-  local cwd="$exec_cwd"   # shadow for the exec scaffolding below (acp handles its own cwd)
   local start_s end_s
   start_s="$(date +%s)"
 
   set +e
-  if [[ -n "$cwd" ]]; then
-    if [[ "$timeout" -gt 0 ]]; then
-      (
-        cd "$cwd" && exec "${META_CMD_ARR[@]}"
-      ) >"${slot_dir}/stdout.txt" 2>"${slot_dir}/stderr.txt" &
-      local pid=$!
-      local waited=0
-      while kill -0 "$pid" 2>/dev/null; do
-        if [[ $waited -ge $timeout ]]; then
-          kill "$pid" 2>/dev/null || true
-          sleep 0.5
-          kill -9 "$pid" 2>/dev/null || true
-          echo "meta: timed out after ${timeout}s" >>"${slot_dir}/stderr.txt"
-          exit_code=124
-          break
-        fi
-        sleep 1
-        waited=$((waited + 1))
-      done
-      if [[ $exit_code -ne 124 ]]; then
-        wait "$pid"
-        exit_code=$?
-      fi
-    else
-      (
-        cd "$cwd" && exec "${META_CMD_ARR[@]}"
-      ) >"${slot_dir}/stdout.txt" 2>"${slot_dir}/stderr.txt"
-      exit_code=$?
-    fi
-  else
-    if [[ "$timeout" -gt 0 ]]; then
-      "${META_CMD_ARR[@]}" >"${slot_dir}/stdout.txt" 2>"${slot_dir}/stderr.txt" &
-      local pid=$!
-      local waited=0
-      while kill -0 "$pid" 2>/dev/null; do
-        if [[ $waited -ge $timeout ]]; then
-          kill "$pid" 2>/dev/null || true
-          sleep 0.5
-          kill -9 "$pid" 2>/dev/null || true
-          echo "meta: timed out after ${timeout}s" >>"${slot_dir}/stderr.txt"
-          exit_code=124
-          break
-        fi
-        sleep 1
-        waited=$((waited + 1))
-      done
-      if [[ $exit_code -ne 124 ]]; then
-        wait "$pid"
-        exit_code=$?
-      fi
-    else
-      "${META_CMD_ARR[@]}" >"${slot_dir}/stdout.txt" 2>"${slot_dir}/stderr.txt"
-      exit_code=$?
-    fi
-  fi
+  meta_spawn_logged "${slot_dir}/stdout.txt" "${slot_dir}/stderr.txt" "$timeout" "$exec_cwd"
+  exit_code=$?
   set -e
 
   end_s="$(date +%s)"
@@ -502,6 +454,12 @@ meta_cmd_run() {
   [[ $ec -ne 0 ]] && status="failed"
   meta_write_run_json "$run_dir" "$META_OPT_RUN_ID" "$status" "$META_OPT_PROMPT" \
     "$provider" "$started" "$ended" "$META_OPT_ENGINE"
+  # Surface the provider's answer. Artifacts stay under the run dir; without this
+  # the README example looks hung — one log line, then silence, then only a path.
+  if [[ -s "${run_dir}/${provider}/stdout.txt" ]]; then
+    cat "${run_dir}/${provider}/stdout.txt"
+    printf '\n'
+  fi
   meta_log "done status=${status} exit=${ec} dir=${run_dir}"
   echo "$run_dir"
   return "$ec"

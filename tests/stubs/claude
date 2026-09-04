@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Headless claude stub for meta-cli hang tests.
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "stub-claude 0.0.0"
+  exit 0
+fi
+
+# Optional hang vectors, driven by env so the same binary covers several tests.
+if [[ "${META_STUB_SLEEP:-0}" != 0 ]]; then
+  sleep "${META_STUB_SLEEP}"
+fi
+
+stdin_bytes=0
+if [[ "${META_STUB_CAT_STDIN:-}" == 1 ]]; then
+  # If meta inherits an open pipe, this blocks until EOF — the hang we guard against.
+  data="$(cat)"
+  stdin_bytes="${#data}"
+fi
+
+printf 'stub-ok stdin=%s args=%s\n' "$stdin_bytes" "$*"
+exit 0
