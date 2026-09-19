@@ -1,6 +1,7 @@
 .meta-runs/
 *.log
 .DS_Store
+.claude/
 .claude-flow/
 
 # Agent memory store (local, per-machine). Binary SQLite plus its WAL
