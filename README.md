@@ -14,11 +14,11 @@ This tool implements the **engine adapter** contract used by [meta-os](https://g
 ## Install
 
 ```bash
-git clone https://github.com/meta-agentic/meta-cli.git ~/code/mova77/meta-cli
+git clone https://github.com/meta-agentic/meta-cli.git ~/meta-cli
 # or wherever you keep repos
 
-ln -sf ~/code/mova77/meta-cli/bin/meta ~/.local/bin/meta
-chmod +x ~/code/mova77/meta-cli/bin/meta
+ln -sf ~/meta-cli/bin/meta ~/.local/bin/meta
+chmod +x ~/meta-cli/bin/meta
 ```
 
 Ensure `~/.local/bin` is on your `PATH`.
