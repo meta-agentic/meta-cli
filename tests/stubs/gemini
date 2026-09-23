@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Headless gemini stub: reports whether the child was given workspace trust.
+set -euo pipefail
+
+if [[ "${1:-}" == "--version" ]]; then
+  echo "stub-gemini 0.0.0"
+  exit 0
+fi
+
+printf 'GEMINI_CLI_TRUST_WORKSPACE=%s\n' "${GEMINI_CLI_TRUST_WORKSPACE-<unset>}"
+printf 'args=%s\n' "$*"
+exit 0

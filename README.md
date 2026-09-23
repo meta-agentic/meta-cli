@@ -57,7 +57,9 @@ meta collect --run-id <id> --to memory/raw    # capture for meta-os vault
 | `-o, --out` | Runs parent directory |
 | `--run-id` | Force run id |
 | `--dry-run` | Print planned commands; write dry-run artifacts |
-| `--yolo` | Pass auto-approve flags where the adapter supports them |
+| `--yolo` | Pass auto-approve flags where the adapter supports them. Codex: `-s workspace-write` (without `--yolo`, the sandbox stays read-only). |
+
+Gemini runs trust the workspace (`GEMINI_CLI_TRUST_WORKSPACE=true`) so headless gemini does not refuse an untrusted directory. An engine's exit code 0 does not prove the work was done (codex exits 0 after a refused write), so callers must verify the result, e.g. with `git diff`.
 
 ## Execution lanes
 
