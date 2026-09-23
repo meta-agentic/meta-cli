@@ -15,19 +15,30 @@ meta_kill_pid_tree() {
 
 # Run META_CMD_ARR with stdin from /dev/null, capturing stdout/stderr to files.
 # A timeout of 0 waits indefinitely. On timeout: SIGTERM tree, then SIGKILL, return 124.
+# gemini_trust=1 sets GEMINI_CLI_TRUST_WORKSPACE on this child only.
 #
 # Why /dev/null: claude/gemini/codex all read stdin in print/headless mode. If the
 # parent keeps a pipe open (agent harness, `sleep | meta`, a TTY the user isn't
 # typing at), the child waits for EOF forever. Claude even warns:
 #   "redirect stdin explicitly: < /dev/null to skip"
 meta_spawn_logged() {
-  local stdout_file="$1" stderr_file="$2" timeout="${3:-0}" cwd="${4:-}"
+  local stdout_file="$1" stderr_file="$2" timeout="${3:-0}" cwd="${4:-}" gemini_trust="${5:-0}"
   local pid waited=0
 
+  # Set or remove it inside the child (prefix or the cd-subshell), never in this shell:
+  # a fan runs other providers in sibling processes that must not inherit it.
   if [[ -n "$cwd" ]]; then
-    ( cd "$cwd" && exec "${META_CMD_ARR[@]}" ) < /dev/null >"$stdout_file" 2>"$stderr_file" &
+    if [[ "$gemini_trust" == 1 ]]; then
+      ( cd "$cwd" && { export GEMINI_CLI_TRUST_WORKSPACE=true; exec "${META_CMD_ARR[@]}"; } ) < /dev/null >"$stdout_file" 2>"$stderr_file" &
+    else
+      ( cd "$cwd" && { unset GEMINI_CLI_TRUST_WORKSPACE; exec "${META_CMD_ARR[@]}"; } ) < /dev/null >"$stdout_file" 2>"$stderr_file" &
+    fi
   else
-    "${META_CMD_ARR[@]}" < /dev/null >"$stdout_file" 2>"$stderr_file" &
+    if [[ "$gemini_trust" == 1 ]]; then
+      GEMINI_CLI_TRUST_WORKSPACE=true "${META_CMD_ARR[@]}" < /dev/null >"$stdout_file" 2>"$stderr_file" &
+    else
+      env -u GEMINI_CLI_TRUST_WORKSPACE "${META_CMD_ARR[@]}" < /dev/null >"$stdout_file" 2>"$stderr_file" &
+    fi
   fi
   pid=$!
 

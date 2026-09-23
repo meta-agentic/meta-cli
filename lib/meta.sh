@@ -117,12 +117,22 @@ meta_resolve_lane() {
   return 0
 }
 
+# True only when `git -C` reports a work tree. Failure (not a repo, git missing)
+# is "not inside" — codex will not start there unless --skip-git-repo-check is set.
+meta_in_git_worktree() {
+  local dir="$1" inside=""
+  inside="$(git -C "$dir" rev-parse --is-inside-work-tree 2>/dev/null || true)"
+  [[ "$inside" == "true" ]]
+}
+
 # Build argv for a headless run. Prints null-separated? No — we use bash arrays via nameref.
-# meta_build_cmd <provider> <prompt> <yolo:0|1> → sets global META_CMD_ARR
+# meta_build_cmd <provider> <prompt> <yolo:0|1> [cwd] → sets global META_CMD_ARR
+# cwd is the run's -C dir; empty means $PWD. Codex needs it for the git-repo check.
 meta_build_cmd() {
-  local provider="$1" prompt="$2" yolo="${3:-0}"
-  local bin
+  local provider="$1" prompt="$2" yolo="${3:-0}" cwd="${4:-}"
+  local bin workdir
   bin="$(meta_resolve_bin "$provider")" || return 1
+  workdir="${cwd:-$PWD}"
   META_CMD_ARR=()
   case "$provider" in
     claude)
@@ -148,8 +158,17 @@ meta_build_cmd() {
       fi
       ;;
     codex)
-      # Best-effort: prefer non-interactive if present; adjust when you verify codex flags
-      META_CMD_ARR=("$bin" exec "$prompt")
+      # Default sandbox is read-only: a refused write still exits 0, so --yolo
+      # has to opt into workspace-write. Skip the git-repo check only outside
+      # a work tree — inside one, codex keeps that safety check.
+      META_CMD_ARR=("$bin" exec)
+      if [[ "$yolo" == 1 ]]; then
+        META_CMD_ARR+=(-s workspace-write)
+      fi
+      if ! meta_in_git_worktree "$workdir"; then
+        META_CMD_ARR+=(--skip-git-repo-check)
+      fi
+      META_CMD_ARR+=("$prompt")
       ;;
     *)
       return 1
@@ -290,12 +309,62 @@ meta_split_providers() {
   done
 }
 
+# Codex prints a total only: a line "tokens used", then a line like "16,190".
+# Returns 1 when this file has no such pair — caller must not invent a number.
+meta_codex_usage_total() {
+  local file="$1" line="" pending=0 num=""
+  [[ -f "$file" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    if [[ "$pending" == 1 ]]; then
+      pending=0
+      num="${line//,/}"
+      if [[ "$num" =~ ^[0-9]+$ ]]; then
+        # Leading zeros are not valid JSON numbers; "000" is a real zero.
+        num="${num#"${num%%[!0]*}"}"
+        if [[ -z "$num" ]]; then
+          num=0
+        fi
+        printf '%s' "$num"
+        return 0
+      fi
+    fi
+    if [[ "$line" == "tokens used" ]]; then
+      pending=1
+    fi
+  done < "$file"
+  return 1
+}
+
+# Usage object, or null. Only a parsed provider total is recorded — never an estimate.
+# Codex has a total and no input/output split, so those stay null.
+meta_usage_json() {
+  local provider="$1" slot_dir="$2" total=""
+  case "$provider" in
+    codex)
+      total="$(meta_codex_usage_total "${slot_dir}/stdout.txt" || true)"
+      if [[ -z "$total" ]]; then
+        total="$(meta_codex_usage_total "${slot_dir}/stderr.txt" || true)"
+      fi
+      if [[ -n "$total" ]]; then
+        printf '{"input": null, "output": null, "total": %s}' "$total"
+        return 0
+      fi
+      ;;
+  esac
+  printf 'null'
+}
+
 # Run one worker; write slot dir. Returns child exit code.
 # Write a slot's meta.json (both lanes, dry and real).
 meta_write_slot_meta() {
   local slot_dir="$1" provider="$2" slot="$3" cmd_str="$4" cwd="$5" \
         started="$6" ended="$7" duration="$8" exit_code="$9" dry="${10}" \
         lane="${11}" fallback="${12}" session_id="${13}"
+  local usage
+  usage="$(meta_usage_json "$provider" "$slot_dir")"
   {
     echo "{"
     echo "  \"provider\": \"$(meta_json_escape "$provider")\","
@@ -309,7 +378,8 @@ meta_write_slot_meta() {
     echo "  \"ended_at\": \"$(meta_json_escape "$ended")\","
     echo "  \"duration_ms\": ${duration},"
     echo "  \"exit_code\": ${exit_code},"
-    echo "  \"dry_run\": ${dry}"
+    echo "  \"dry_run\": ${dry},"
+    echo "  \"usage\": ${usage}"
     echo "}"
   } >"${slot_dir}/meta.json"
 }
@@ -348,7 +418,7 @@ meta_exec_one() {
     [[ "$yolo" == 1 ]] && META_CMD_ARR+=(--yolo)
     exec_cwd=""
   else
-    if ! meta_build_cmd "$provider" "$prompt" "$yolo"; then
+    if ! meta_build_cmd "$provider" "$prompt" "$yolo" "$cwd"; then
       echo "provider not available: $provider" >"${slot_dir}/stderr.txt"
       : >"${slot_dir}/stdout.txt"
       meta_write_slot_meta "$slot_dir" "$provider" "$slot" "" "${cwd:-}" \
@@ -375,8 +445,16 @@ meta_exec_one() {
   local start_s end_s
   start_s="$(date +%s)"
 
+  # Headless gemini exits 55 in an untrusted directory. Pass trust as a spawn
+  # argument so it is applied to this child only — an export here would mark
+  # every provider in a fan as trusted.
+  local gemini_trust=0
+  if [[ "$provider" == "gemini" ]]; then
+    gemini_trust=1
+  fi
+
   set +e
-  meta_spawn_logged "${slot_dir}/stdout.txt" "${slot_dir}/stderr.txt" "$timeout" "$exec_cwd"
+  meta_spawn_logged "${slot_dir}/stdout.txt" "${slot_dir}/stderr.txt" "$timeout" "$exec_cwd" "$gemini_trust"
   exit_code=$?
   set -e
 
